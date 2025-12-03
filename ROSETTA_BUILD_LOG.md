@@ -13,7 +13,16 @@
 
 ## 当前状态
 
-**编译进度**: ~36% (后台命令 ID: 418)
+**🎉 编译成功！测试通过！**
+
+```
+ExecutionEngineTest:
+        IndexOrder: PASSED.
+        Execute_PlanFragmentInfo: PASSED.
+PASSED
+```
+
+**可执行文件**: `obj/release/cpptests/execution/engine_test` (14MB, x86_64)
 
 ## 已解决的问题
 

@@ -1071,7 +1071,7 @@ namespace voltdb {
 
         template<unsigned char NthBit, typename = typename enable_if<NthBit < 8>::type>
         struct NthBitChecker {                         // Tag that checks whether the n-th bit of first byte is on
-            static constexpr char const MASK = 1 << NthBit;
+            static constexpr unsigned char MASK = 1u << NthBit;
             bool operator()(void*) const noexcept;
             bool operator()(void const*) const noexcept;
             static void set(void*) noexcept;
@@ -1172,4 +1172,3 @@ namespace voltdb {
         }
     };
 }
-
