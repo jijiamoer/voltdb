@@ -185,17 +185,12 @@ if(CCACHE_PROGRAM)
     set_property(GLOBAL PROPERTY RULE_LAUNCH_COMPILE "${CCACHE_PROGRAM}")
 endif()
 
-CMAKE_MINIMUM_REQUIRED (VERSION 2.8.11 FATAL_ERROR)
+CMAKE_MINIMUM_REQUIRED (VERSION 3.5 FATAL_ERROR)
 PROJECT(VoltDB)
 INCLUDE(ExternalProject)
-IF ( (CMAKE_SYSTEM_NAME STREQUAL "Darwin") AND
-    ( (CMAKE_VERSION VERSION_GREATER 3.0.0)
-      OR (CMAKE_VERSION VERSION_EQUAL 3.0.0) ) )
-    # Newer versions of CMake than we use set this
-    # policy on the mac.  There there is a way to set the
-    # rpath which is different from Linux.  We just ignore
-    # it, but we need to use the old behavior on the mac.
-    CMAKE_POLICY(SET CMP0042 OLD)
+# macOS rpath handling - 使用新版 CMake 的默认行为
+IF (CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+    SET(CMAKE_MACOSX_RPATH ON)
 ENDIF()
 
 ########################################################################
@@ -290,41 +285,78 @@ SET (VOLTDB_3PTY_BUILD_PREFIX ${${PROJECT_NAME}_BINARY_DIR}/3pty-obj)
 # S2GEO uses.  We have to untar it and build it, which
 # we do at build time.
 #
+# 注意：在 ARM64 Darwin 上，OpenSSL 1.0.2t 不支持原生编译，
+# 使用 Homebrew 安装的 OpenSSL 替代
+#
 ########################################################################
-SET (VOLTDB_OPENSSL_VERSION 1.0.2t)
-SET (VOLTDB_OPENSSL_NAME openssl-${VOLTDB_OPENSSL_VERSION})
-# We unpack the tarball in the binary directory. Same with pcre2 above.
-SET (VOLTDB_OPENSSL_TARBALL ${VOLTDB_TARBALLS}/${VOLTDB_OPENSSL_NAME}.tar.gz)
-# VOLTDB_3PTY_INSTALL_PREFIX:      voltdb/obj/${VOLTDB_BUILD_TYPE}/ee/3pty-install
-# VOLTDB_3PTY_BUILD_PREFIX:        voltdb/obj/${VOLTDB_BUILD_TYPE}/ee/3pty-obj
-# VOLTDB_OPENSSL_BUILD_PREFIX:     /openssl
-# VOLTDB_OPENSSL_SRC:              /src/openssl-1.0.2t/ ... unpacked source
-# VOLTDB_OPENSSL_OBJ:              /src/openssl-1.0.2t/ ... generated binaries
-# Binary and source are the same for openssl.  There
-# are not obvious ways to do out-of-tree builds.
-SET (VOLTDB_OPENSSL_BUILD_PREFIX ${VOLTDB_3PTY_BUILD_PREFIX}/openssl)
-SET (VOLTDB_OPENSSL_SRC ${VOLTDB_OPENSSL_BUILD_PREFIX}/src/${VOLTDB_OPENSSL_NAME})
-SET (VOLTDB_OPENSSL_OBJ ${VOLTDB_OPENSSL_SRC})
 
-BANNER("Describing OPENSSL"
-       "  SOURCE at ${VOLTDB_OPENSSL_SRC}"
-       "  BINARY at ${VOLTDB_OPENSSL_OBJ}"
-       "  TARBALL at ${VOLTDB_OPENSSL_TARBALL}"
-       "  CONFIGURE_COMMAND: ${VOLTDB_OPENSSL_SRC}/Configure --prefix=${VOLTDB_3PTY_INSTALL_PREFIX} ${VOLTDB_OPENSSL_TOKEN}"
-   )
+# 检查是否为 ARM64 Darwin 并且 Homebrew OpenSSL 可用
+SET(USE_SYSTEM_OPENSSL OFF)
+IF(CMAKE_SYSTEM_NAME STREQUAL "Darwin" AND CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64")
+  # 查找 Homebrew OpenSSL@3 或 OpenSSL@1.1
+  FOREACH(OPENSSL_VERSION openssl@3 openssl@1.1 openssl)
+    EXECUTE_PROCESS(
+      COMMAND brew --prefix ${OPENSSL_VERSION}
+      OUTPUT_VARIABLE HOMEBREW_OPENSSL_PREFIX
+      OUTPUT_STRIP_TRAILING_WHITESPACE
+      ERROR_QUIET
+      RESULT_VARIABLE HOMEBREW_OPENSSL_RESULT
+    )
+    IF(HOMEBREW_OPENSSL_RESULT EQUAL 0 AND EXISTS "${HOMEBREW_OPENSSL_PREFIX}/lib/libcrypto.a")
+      SET(USE_SYSTEM_OPENSSL ON)
+      MESSAGE(STATUS "Using Homebrew ${OPENSSL_VERSION} at ${HOMEBREW_OPENSSL_PREFIX}")
+      BREAK()
+    ENDIF()
+  ENDFOREACH()
+ENDIF()
 
-
-ExternalProject_Add(crypto
-  SOURCE_DIR ${VOLTDB_OPENSSL_SRC}
-  INSTALL_DIR ${VOLTDB_3PTY_INSTALL_PREFIX}
-  DOWNLOAD_DIR ${VOLTDB_OPENSSL_BUILD_PREFIX}/src
-  URL ${VOLTDB_OPENSSL_TARBALL}
-  CONFIGURE_COMMAND ${VOLTDB_OPENSSL_SRC}/Configure --prefix=${VOLTDB_3PTY_INSTALL_PREFIX} ${VOLTDB_OPENSSL_TOKEN}
-  BUILD_IN_SOURCE 1
-  INSTALL_COMMAND make install_sw
+IF(USE_SYSTEM_OPENSSL)
+  # 使用 Homebrew OpenSSL
+  SET(VOLTDB_CRYPTO_INSTALL_DIR ${HOMEBREW_OPENSSL_PREFIX})
+  # 创建一个空的 target 来满足依赖
+  ADD_CUSTOM_TARGET(crypto
+    COMMENT "Using system OpenSSL from ${VOLTDB_CRYPTO_INSTALL_DIR}"
   )
-ExternalProject_get_property(crypto INSTALL_DIR)
-SET(VOLTDB_CRYPTO_INSTALL_DIR ${INSTALL_DIR})
+  BANNER("Using System OPENSSL"
+         "  INSTALL_DIR at ${VOLTDB_CRYPTO_INSTALL_DIR}"
+     )
+ELSE()
+  # 从源码编译 OpenSSL
+  SET (VOLTDB_OPENSSL_VERSION 1.0.2t)
+  SET (VOLTDB_OPENSSL_NAME openssl-${VOLTDB_OPENSSL_VERSION})
+  # We unpack the tarball in the binary directory. Same with pcre2 above.
+  SET (VOLTDB_OPENSSL_TARBALL ${VOLTDB_TARBALLS}/${VOLTDB_OPENSSL_NAME}.tar.gz)
+  # VOLTDB_3PTY_INSTALL_PREFIX:      voltdb/obj/${VOLTDB_BUILD_TYPE}/ee/3pty-install
+  # VOLTDB_3PTY_BUILD_PREFIX:        voltdb/obj/${VOLTDB_BUILD_TYPE}/ee/3pty-obj
+  # VOLTDB_OPENSSL_BUILD_PREFIX:     /openssl
+  # VOLTDB_OPENSSL_SRC:              /src/openssl-1.0.2t/ ... unpacked source
+  # VOLTDB_OPENSSL_OBJ:              /src/openssl-1.0.2t/ ... generated binaries
+  # Binary and source are the same for openssl.  There
+  # are not obvious ways to do out-of-tree builds.
+  SET (VOLTDB_OPENSSL_BUILD_PREFIX ${VOLTDB_3PTY_BUILD_PREFIX}/openssl)
+  SET (VOLTDB_OPENSSL_SRC ${VOLTDB_OPENSSL_BUILD_PREFIX}/src/${VOLTDB_OPENSSL_NAME})
+  SET (VOLTDB_OPENSSL_OBJ ${VOLTDB_OPENSSL_SRC})
+
+  BANNER("Describing OPENSSL"
+         "  SOURCE at ${VOLTDB_OPENSSL_SRC}"
+         "  BINARY at ${VOLTDB_OPENSSL_OBJ}"
+         "  TARBALL at ${VOLTDB_OPENSSL_TARBALL}"
+         "  CONFIGURE_COMMAND: ${VOLTDB_OPENSSL_SRC}/Configure --prefix=${VOLTDB_3PTY_INSTALL_PREFIX} ${VOLTDB_OPENSSL_TOKEN}"
+     )
+
+
+  ExternalProject_Add(crypto
+    SOURCE_DIR ${VOLTDB_OPENSSL_SRC}
+    INSTALL_DIR ${VOLTDB_3PTY_INSTALL_PREFIX}
+    DOWNLOAD_DIR ${VOLTDB_OPENSSL_BUILD_PREFIX}/src
+    URL ${VOLTDB_OPENSSL_TARBALL}
+    CONFIGURE_COMMAND ${VOLTDB_OPENSSL_SRC}/Configure --prefix=${VOLTDB_3PTY_INSTALL_PREFIX} ${VOLTDB_OPENSSL_TOKEN}
+    BUILD_IN_SOURCE 1
+    INSTALL_COMMAND make install_sw
+    )
+  ExternalProject_get_property(crypto INSTALL_DIR)
+  SET(VOLTDB_CRYPTO_INSTALL_DIR ${INSTALL_DIR})
+ENDIF()
 
 ########################################################################
 #
@@ -378,7 +410,8 @@ SET (VOLTDB_S2GEO_CMAKE_CONFIG
   -DCXX_VERSION_FLAG=${CXX_VERSION_FLAG}
   -DVOLTDB_THIRD_PARTY_CPP_DIR=${CMAKE_SOURCE_DIR}/third_party/cpp
   -DCMAKE_INSTALL_PREFIX=${VOLTDB_3PTY_INSTALL_PREFIX}/
-  -DCMAKE_BUILD_TYPE=${VOLTDB_BUILD_TYPE})
+  -DCMAKE_BUILD_TYPE=${VOLTDB_BUILD_TYPE}
+  -DVOLTDB_OPENSSL_DIR=${VOLTDB_CRYPTO_INSTALL_DIR})
 SET (VOLTDB_S2GEO_PREFIX ${VOLTDB_3PTY_BUILD_PREFIX}/google-s2-geometry)
 
 BANNER("Describing S2GEO"

@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 2.8)
+cmake_minimum_required(VERSION 3.5)
 
 find_program(CCACHE_PROGRAM ccache)
 if(CCACHE_PROGRAM)
@@ -88,9 +88,7 @@ include_directories(${GTEST_INCLUDE_DIRECTORIES})
 add_library(gtest ${GTEST_DIR}/src/gtest-all.cc ${GTEST_DIR}/src/gtest_main.cc)
 enable_testing(true)
 
-if (${CMAKE_VERSION} VERSION_GREATER 2.8.12.999)
-  cmake_policy(SET CMP0037 OLD) # allow underscores in targets
-endif()
+# CMP0037 已过时，新版 CMake 默认允许下划线目标名
 
 if (${CMAKE_SYSTEM_NAME} MATCHES "Linux")
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fpic")

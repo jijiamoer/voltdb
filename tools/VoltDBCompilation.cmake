@@ -53,7 +53,12 @@ IF (IS_VALGRIND_BUILD)
 ELSEIF (VOLTDB_BUILD_TYPE STREQUAL "DEBUG")
   VOLTDB_ADD_COMPILE_OPTIONS(-g3)
 ELSEIF (VOLTDB_BUILD_TYPE STREQUAL "RELEASE")
-  VOLTDB_ADD_COMPILE_OPTIONS(-O3 -g3 -mmmx -msse -msse2 -msse3 -DNDEBUG)
+  # x86 SIMD 标志仅在非 ARM 架构上使用
+  IF (CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|i686")
+    VOLTDB_ADD_COMPILE_OPTIONS(-O3 -g3 -mmmx -msse -msse2 -msse3 -DNDEBUG)
+  ELSE()
+    VOLTDB_ADD_COMPILE_OPTIONS(-O3 -g3 -DNDEBUG)
+  ENDIF()
 ELSE()
   MESSAGE(FATAL_ERROR "BUILD TYPE ${VOLTDB_BUILD_TYPE} IS UNKNOWN.")
 ENDIF()
@@ -170,6 +175,12 @@ ELSEIF (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" OR CMAKE_CXX_COMPILER_ID STREQUAL
     # Later updates require this flag
     VOLTDB_ADD_COMPILE_OPTIONS(-Wno-deprecated-copy -Wno-unused-but-set-variable)
   ENDIF()
+  # Clang 15+ 标记旧版 Boost 库的内建函数为废弃；在 Rosetta 的 Clang 17 上还会触发 unqualified-std-cast-call
+  IF ("15.0.0" VERSION_LESS ${CMAKE_CXX_COMPILER_VERSION} )
+    VOLTDB_ADD_COMPILE_OPTIONS(-Wno-deprecated-builtins -Wno-enum-constexpr-conversion -Wno-unqualified-std-cast-call)
+  ENDIF()
+  # VLA 是 Clang 的 C++ 扩展，VoltDB 代码中有使用
+  VOLTDB_ADD_COMPILE_OPTIONS(-Wno-vla-cxx-extension)
 ELSE()
   MESSAGE (FATAL_ERROR "Unknown compiler family ${CMAKE_CXX_COMPILER_ID}.  We only support GNU and Clang.")
 ENDIF ()
@@ -191,7 +202,15 @@ IF ( ${CMAKE_SYSTEM_NAME} STREQUAL "Linux" )
   ENDIF()
 ELSEIF( ${CMAKE_SYSTEM_NAME} STREQUAL "Darwin" )
   SET (VOLTDB_NM_OPTIONS "-n")
-  SET (VOLTDB_OPENSSL_TOKEN "darwin64-x86_64-cc")
+  # OpenSSL 1.0.2t 不支持 ARM64，使用通用 darwin64 配置
+  # ARM64 Mac 会通过 Rosetta 2 或原生编译器生成兼容代码
+  IF (CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64")
+    # 使用 darwin64-x86_64-cc 但让编译器决定架构
+    # 或者使用 darwin-ppc-cc 的变体方案，这里使用通用方案
+    SET (VOLTDB_OPENSSL_TOKEN "darwin64-x86_64-cc -arch arm64")
+  ELSE()
+    SET (VOLTDB_OPENSSL_TOKEN "darwin64-x86_64-cc")
+  ENDIF()
   VOLTDB_ADD_COMPILE_OPTIONS("-DMACOSX")
 ELSE()
   MESSAGE(FATAL_ERROR "System nameed ${CMAKE_SYSTEM_NAME} is unknown")

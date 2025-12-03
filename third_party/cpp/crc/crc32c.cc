@@ -12,6 +12,11 @@
 
 namespace vdbcrc {
 
+// 前向声明软件实现
+uint32_t crc32cSlicingBy8(uint32_t crc, const void* data, size_t length);
+
+#if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
+// x86 平台：支持硬件加速
 static uint32_t crc32c_CPUDetection(uint32_t crc, const void* data, size_t length) {
     // Avoid issues that could potentially be caused by multiple threads: use a local variable
     CRC32CFunctionPtr best = detectBestCRC32C();
@@ -40,6 +45,14 @@ CRC32CFunctionPtr detectBestCRC32C() {
         return crc32cSlicingBy8;
     }
 }
+#else
+// 非 x86 平台（ARM64 等）：只使用软件实现
+CRC32CFunctionPtr crc32c = crc32cSlicingBy8;
+
+CRC32CFunctionPtr detectBestCRC32C() {
+    return crc32cSlicingBy8;
+}
+#endif
 
 // Implementations adapted from Intel's Slicing By 8 Sourceforge Project
 // http://sourceforge.net/projects/slicing-by-8/
@@ -94,6 +107,8 @@ uint32_t crc32cSlicingBy8(uint32_t crc, const void* data, size_t length) {
     return crc;
 }
 
+#if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
+// x86 硬件加速 CRC32 指令实现
 inline uint64_t _mm_crc32_u64(uint64_t crc, uint64_t value) {
     asm("crc32q %[value], %[crc]\n" : [crc] "+r" (crc) : [value] "rm" (value));
     return crc;
@@ -167,5 +182,6 @@ uint32_t crc32cHardware64(uint32_t crc, const void* data, size_t length) {
 
     return crc32bit;
 }
+#endif // x86 only
 
 }  // namespace vdbcrc

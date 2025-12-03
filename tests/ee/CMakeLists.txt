@@ -33,7 +33,7 @@
 # tests.
 #
 ########################################################################
-CMAKE_MINIMUM_REQUIRED (VERSION 2.8.11 FATAL_ERROR)
+CMAKE_MINIMUM_REQUIRED (VERSION 3.5 FATAL_ERROR)
 
 find_program(CCACHE_PROGRAM ccache)
 if(CCACHE_PROGRAM)
@@ -41,12 +41,9 @@ if(CCACHE_PROGRAM)
 endif()
 
 PROJECT(VoltDB_Tests)
-IF ( (CMAKE_SYSTEM_NAME STREQUAL "Darwin") AND ( (CMAKE_VERSION VERSION_GREATER 3.0.0) OR (CMAKE_VERSION VERSION_EQUAL 3.0.0) ) )
-    # Newer versions of CMake than we use set this
-    # policy on the mac.  There there is a way to set the
-    # rpath which is different from Linux.  We just ignore
-    # it, but we need to use the old behavior on the mac.
-    CMAKE_POLICY(SET CMP0042 OLD)
+# macOS rpath handling - 使用新版 CMake 的默认行为
+IF (CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+    SET(CMAKE_MACOSX_RPATH ON)
 ENDIF()
 
 COMPUTE_CORE_COUNT(VOLTDB_CORE_COUNT)
@@ -204,20 +201,47 @@ FOREACH (CLASS ${VOLTDB_GENERATED_TEST_GENERATORS})
 ENDFOREACH()
 #
 # Generate the tests.
+# 注意：如果 Java 环境不可用，跳过生成测试
 #
-EXECUTE_PROCESS(
-    COMMAND ${CMAKE_SOURCE_DIR}/tools/generate-ee-unit-tests.sh --voltdbroot=${CMAKE_SOURCE_DIR} ${VOLTDB_TEST_BUILD_TYPE} ${VOLTDB_TEST_CLASS_LIST}
-)
+SET(VOLTDB_GENERATED_TESTS_FILE ${CMAKE_SOURCE_DIR}/tests/ee/ee_auto_generated_unit_tests/generated_tests.txt)
+IF(EXISTS ${VOLTDB_GENERATED_TESTS_FILE})
+  FILE(READ ${VOLTDB_GENERATED_TESTS_FILE} VOLTDB_GENERATED_TESTS_CONTENT)
+  STRING(LENGTH "${VOLTDB_GENERATED_TESTS_CONTENT}" VOLTDB_GENERATED_TESTS_LEN)
+  IF(VOLTDB_GENERATED_TESTS_LEN GREATER 1)
+    # 有生成的测试
+    MESSAGE(STATUS "Using existing generated tests from ${VOLTDB_GENERATED_TESTS_FILE}")
+  ELSE()
+    # 文件为空，跳过生成
+    MESSAGE(STATUS "No generated tests found, skipping...")
+    SET(VOLTDB_GENERATED_TESTS_CONTENT "")
+  ENDIF()
+ELSE()
+  # 尝试生成测试
+  EXECUTE_PROCESS(
+      COMMAND ${CMAKE_SOURCE_DIR}/tools/generate-ee-unit-tests.sh --voltdbroot=${CMAKE_SOURCE_DIR} ${VOLTDB_TEST_BUILD_TYPE} ${VOLTDB_TEST_CLASS_LIST}
+      RESULT_VARIABLE GENERATE_RESULT
+  )
+  IF(EXISTS ${VOLTDB_GENERATED_TESTS_FILE})
+    FILE(READ ${VOLTDB_GENERATED_TESTS_FILE} VOLTDB_GENERATED_TESTS_CONTENT)
+  ELSE()
+    MESSAGE(STATUS "Test generation failed, continuing with manual tests only...")
+    SET(VOLTDB_GENERATED_TESTS_CONTENT "")
+  ENDIF()
+ENDIF()
+
 #
 # The previous command left the test names in
 # This file.  Each line is a single file name.  We
 # need to do some CMake magic to convert this to a
 # CMake list.
 #
-FILE(READ ${CMAKE_SOURCE_DIR}/tests/ee/ee_auto_generated_unit_tests/generated_tests.txt VOLTDB_GENERATED_TEST_PROGRAMS)
-STRING(REPLACE "\n" ";" VOLTDB_GENERATED_TEST_PROGRAMS ${VOLTDB_GENERATED_TEST_PROGRAMS})
-
-STRING(STRIP "${VOLTDB_GENERATED_TEST_PROGRAMS}" VOLTDB_GENERATED_TEST_PROGRAMS)
+SET(VOLTDB_GENERATED_TEST_PROGRAMS "${VOLTDB_GENERATED_TESTS_CONTENT}")
+IF(VOLTDB_GENERATED_TEST_PROGRAMS)
+  STRING(REPLACE "\n" ";" VOLTDB_GENERATED_TEST_PROGRAMS "${VOLTDB_GENERATED_TEST_PROGRAMS}")
+  STRING(STRIP "${VOLTDB_GENERATED_TEST_PROGRAMS}" VOLTDB_GENERATED_TEST_PROGRAMS)
+ELSE()
+  SET(VOLTDB_GENERATED_TEST_PROGRAMS "")
+ENDIF()
 # MESSAGE( "VOLTDB_GENERATED_TEST_PROGRAMS is ${VOLTDB_GENERATED_TEST_PROGRAMS}" )
 
 #
