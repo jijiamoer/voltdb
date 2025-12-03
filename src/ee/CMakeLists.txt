@@ -48,7 +48,7 @@
 # ${CMAKE_SOURCE_DIR}/obj/${VOLTDB_BUILD_TYPE} respectively.
 #
 ########################################################################
-CMAKE_MINIMUM_REQUIRED (VERSION 2.8.11 FATAL_ERROR)
+CMAKE_MINIMUM_REQUIRED (VERSION 3.5 FATAL_ERROR)
 
 find_program(CCACHE_PROGRAM ccache)
 if(CCACHE_PROGRAM)
@@ -73,12 +73,9 @@ BANNER("Configuring the VoltDB Execution Engine Runtime."
        "VOLT_TIMER_ENABLED:     ${VOLT_TIMER_ENABLED}"
    )
 
-IF ( (CMAKE_SYSTEM_NAME STREQUAL "Darwin") AND ( (CMAKE_VERSION VERSION_GREATER 3.0.0) OR (CMAKE_VERSION VERSION_EQUAL 3.0.0) ) )
-    # Newer versions of CMake than we use set this
-    # policy on the mac.  There there is a way to set the
-    # rpath which is different from Linux.  We just ignore
-    # it, but we need to use the old behavior on the mac.
-    CMAKE_POLICY(SET CMP0042 OLD)
+# macOS rpath handling - 使用新版 CMake 的默认行为
+IF (CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+    SET(CMAKE_MACOSX_RPATH ON)
 ENDIF()
 
 ########################################################################
